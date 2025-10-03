@@ -58,11 +58,13 @@
 </head>
 <body>
   <header>
-    <div><strong>Volantino/Brochure • Visualizzatore PDF</strong></div>
+    <div><strong id="headerTitle">Volantino/Brochure • Visualizzatore PDF</strong></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button id="toggleMode" class="btn" type="button" aria-pressed="false" title="Vista singola/doppia pagina">Vista: singola</button>
       <button id="fitWidth" class="btn" type="button" aria-pressed="true" title="Adatta in larghezza / in altezza">Adatta: larghezza</button>
       <button id="animMode" class="btn" type="button" aria-pressed="true" title="Cambia animazione di sfoglio">Animazione: flip</button>
+      <button id="switchToPartiture" class="btn" type="button" title="Visualizza il PDF delle partiture">Visualizza partiture</button>
+      <button id="switchToVolantino" class="btn" type="button" title="Torna al volantino" style="display:none;">Torna al volantino</button>
       <a id="openPdf" class="btn" href="Volantino.pdf" target="_blank" rel="noopener">Apri PDF</a>
     </div>
   </header>
@@ -96,7 +98,7 @@
     (async function main(){
       const DEFAULT_PDF = 'Volantino.pdf';
       const params = new URLSearchParams(location.search);
-      const pdfUrl = DEFAULT_PDF; // fisso per GitHub: il file si chiama Volantino.pdf
+      let currentPdfFile = DEFAULT_PDF; // Variabile per tracciare il PDF corrente
       const startMode = (params.get('mode')||'single').toLowerCase()==='spread'?'spread':'single';
       const startAnim = (params.get('anim')||'flip').toLowerCase(); // flip|slide|none
 
@@ -112,6 +114,10 @@
       const toggleModeBtn = document.getElementById('toggleMode');
       const fitWidthBtn = document.getElementById('fitWidth');
       const animModeBtn = document.getElementById('animMode');
+      const switchToPartitureBtn = document.getElementById('switchToPartiture');
+      const switchToVolantinoBtn = document.getElementById('switchToVolantino');
+      const openPdfLink = document.getElementById('openPdf');
+      const headerTitle = document.getElementById('headerTitle');
 
       // carica pdf.js
       try{
@@ -132,113 +138,4 @@
       // layout
       function setContainerLayout(){
         container.className=''; container.classList.remove('spread','slide-left','slide-right','enter','done','flip-left','flip-right','anim');
-        if(mode==='spread'){
-          if(!canvasB){ canvasB=document.createElement('canvas'); canvasB.id='canvasB'; ctxB=canvasB.getContext('2d'); container.classList.add('spread'); container.appendChild(canvasB); }
-        }else{
-          if(canvasB){ container.removeChild(canvasB); canvasB=null; ctxB=null; }
-        }
-        toggleModeBtn.textContent='Vista: '+(mode==='spread'?'doppia':'singola');
-        toggleModeBtn.setAttribute('aria-pressed', mode==='spread');
-        animModeBtn.textContent='Animazione: '+(animationMode==='none'?'nessuna':animationMode);
-        animModeBtn.setAttribute('aria-pressed', animationMode!=='none');
-      }
-
-      function getSpreadPages(anchor, numPages){
-        if(anchor<=1) return [1];
-        return anchor%2===0 ? [anchor, Math.min(anchor+1,numPages)] : [anchor-1, anchor];
-      }
-      function getNextAnchor(anchor, numPages){
-        if(anchor<=1) return Math.min(2,numPages);
-        const maxAnchor = (numPages%2===0)?numPages:numPages-1;
-        return Math.min(anchor+2, Math.max(1,maxAnchor));
-      }
-      function getPrevAnchor(anchor){ if(anchor<=1) return 1; return Math.max(1, anchor-2); }
-
-      function computeScale(viewport, count){
-        const pad = parseFloat(getComputedStyle(pageWrap).paddingLeft)*2;
-        const maxW = stage.clientWidth - pad - (count===2?10:0);
-        const maxH = stage.clientHeight - pad;
-        if(fitMode==='width'){
-          const targetW = (count===2)?(maxW-10)/2:maxW;
-          const scale = targetW/viewport.width;
-          return Math.min(scale, maxH/viewport.height);
-        }else{
-          const scale = maxH/viewport.height;
-          const totalW = viewport.width*scale*(count===2?2:1)+(count===2?10:0);
-          if(totalW>maxW){
-            const scaleW = (maxW-(count===2?10:0))/(viewport.width*(count===2?2:1));
-            return Math.min(scale, scaleW);
-          }
-          return scale;
-        }
-      }
-      function clearCanvas(c){ const ctx=c.getContext('2d'); ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,c.width,c.height); ctx.restore(); }
-      function renderPageToCanvas(page, canvas, ctx, scale){
-        const vp = page.getViewport({scale});
-        const ratio = window.devicePixelRatio||1;
-        canvas.width = Math.floor(vp.width*ratio); canvas.height=Math.floor(vp.height*ratio);
-        canvas.style.width = Math.floor(vp.width)+'px'; canvas.style.height=Math.floor(vp.height)+'px';
-        ctx.setTransform(ratio,0,0,ratio,0,0);
-        return page.render({canvasContext:ctx, viewport:vp}).promise;
-      }
-      function updateIndicator(){ if(!pdfDoc) return; pageIndicator.textContent=`Pagina ${pageNum} di ${pdfDoc.numPages}`; }
-      function updateButtons(){ if(!pdfDoc) return; prevBtn.disabled=pageNum<=1; nextBtn.disabled=(mode==='single'?pageNum>=pdfDoc.numPages:getNextAnchor(pageNum,pdfDoc.numPages)===pageNum); }
-
-      function playAnimation(dir){
-        if(animationMode==='none') return;
-        if(animationMode==='slide'){
-          container.classList.remove('slide-left','slide-right','enter','done'); void container.offsetWidth;
-          container.classList.add(dir==='right'?'slide-right':'slide-left','enter'); requestAnimationFrame(()=>container.classList.add('done'));
-          setTimeout(()=>container.classList.remove('slide-left','slide-right','enter','done'), 460);
-        }else if(animationMode==='flip'){
-          container.classList.remove('flip-left','flip-right','anim'); void container.offsetWidth;
-          container.classList.add(dir==='right'?'flip-right':'flip-left','anim');
-          setTimeout(()=>container.classList.remove('flip-left','flip-right','anim'), 480);
-        }
-      }
-
-      async function render(){
-        if(!pdfDoc) return; if(isRendering){ pending=true; return; } isRendering=true;
-        try{
-          const p1 = await pdfDoc.getPage(pageNum);
-          const scale = computeScale(p1.getViewport({scale:1}), mode==='spread'?2:1);
-          await renderPageToCanvas(p1, canvasA, ctxA, scale);
-          if(mode==='spread'){
-            const pair = getSpreadPages(pageNum, pdfDoc.numPages);
-            if(pair.length<2){ if(canvasB) clearCanvas(canvasB); }
-            else{
-              const right = (pair[0]===pageNum)?pair[1]:(pair[0]===1?pair[1]:(pageNum%2===0?pageNum+1:pageNum));
-              const p2 = await pdfDoc.getPage(right);
-              await renderPageToCanvas(p2, canvasB, ctxB, scale);
-            }
-          }
-        }finally{
-          isRendering=false; if(pending){ pending=false; render(); }
-        }
-        updateIndicator(); updateButtons();
-      }
-
-      async function loadDocument(url){
-        const task = window.pdfjsLib.getDocument({url});
-        pdfDoc = await task.promise; pageNum=1; setContainerLayout(); await render();
-      }
-
-      // UI
-      function goPrev(){ if(!pdfDoc) return; if(mode==='single'){ if(pageNum<=1) return; pageNum--; } else { pageNum=getPrevAnchor(pageNum); } playAnimation('left'); render(); }
-      function goNext(){ if(!pdfDoc) return; if(mode==='single'){ if(pageNum>=pdfDoc.numPages) return; pageNum++; } else { const n=getNextAnchor(pageNum,pdfDoc.numPages); if(n===pageNum) return; pageNum=n; } playAnimation('right'); render(); }
-      document.getElementById('toggleMode').addEventListener('click', ()=>{ mode=(mode==='single'?'spread':'single'); setContainerLayout(); render(); });
-      document.getElementById('fitWidth').addEventListener('click', ()=>{ fitMode=(fitMode==='width'?'height':'width'); fitWidthBtn.textContent='Adatta: '+(fitMode==='width'?'larghezza':'altezza'); fitWidthBtn.setAttribute('aria-pressed', fitMode==='width'); render(); });
-      document.getElementById('animMode').addEventListener('click', ()=>{ animationMode=(animationMode==='flip'?'slide':animationMode==='slide'?'none':'flip'); animModeBtn.textContent='Animazione: '+(animationMode==='none'?'nessuna':animationMode); animModeBtn.setAttribute('aria-pressed', animationMode!=='none'); });
-      document.getElementById('prevBtn').addEventListener('click', goPrev);
-      document.getElementById('nextBtn').addEventListener('click', goNext);
-      window.addEventListener('keydown', e=>{ if(e.key==='ArrowLeft') goPrev(); if(e.key==='ArrowRight') goNext(); });
-      container.addEventListener('click', e=>{ const r=container.getBoundingClientRect(); const x=e.clientX-r.left; if(x<r.width*0.35) goPrev(); else if(x>r.width*0.65) goNext(); });
-      let rt=null; window.addEventListener('resize', ()=>{ if(!pdfDoc) return; clearTimeout(rt); rt=setTimeout(()=>render(),140); });
-
-      // start
-      setContainerLayout();
-      await loadDocument(pdfUrl);
-    })();
-  </script>
-</body>
-</html>
+        if(mode=
