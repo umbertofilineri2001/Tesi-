@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Volantino/Brochure – Visualizzatore PDF</title>
+  <meta name="description" content="Visualizza Volantino.pdf come volantino/brochure con pulsanti laterali e animazioni.">
+  <style>
+    :root{
+      --bg:#0f172a;--paper:#fff;--muted:rgba(255,255,255,.85);
+      --shadow:0 30px 80px rgba(0,0,0,.28); --anim:420ms;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:radial-gradient(1200px 800px at 20% 10%, #172554 0%, transparent 50%),
+      radial-gradient(1200px 800px at 80% 90%, #1e293b 0%, transparent 50%),var(--bg);
+      color:var(--muted);font:16px/1.45 system-ui,Segoe UI,Roboto,Arial;
+      display:grid;grid-template-rows:auto 1fr auto;min-height:100dvh
+    }
+    header,footer{padding:14px clamp(16px,3vw,28px);border-block:1px solid rgba(255,255,255,.06)}
+    header{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+    .btn{appearance:none;border:0;border-radius:10px;padding:8px 12px;cursor:pointer;background:rgba(255,255,255,.12);color:#fff}
+    .btn[aria-pressed="true"]{outline:2px solid rgba(255,255,255,.5)}
+    .stage{position:relative;margin:clamp(16px,3vw,24px) auto;width:min(96vw,1200px);
+      height:calc(100dvh - 200px);max-height:1200px;display:grid;place-items:center;touch-action:manipulation}
+    .page-wrap{position:relative;width:100%;height:100%;display:grid;place-items:center;padding:clamp(8px,1.8vw,18px)}
+    #canvasContainer{position:relative; perspective:1400px;}
+    .spread{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;justify-items:center}
+    canvas{display:block;background:var(--paper);border-radius:14px;box-shadow:var(--shadow);max-width:100%;height:auto}
+    .nav-btn{position:absolute;top:50%;translate:0 -50%;width:64px;height:96px;border:0;border-radius:16px;
+      background:rgba(255,255,255,.14);color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.25);cursor:pointer;
+      display:grid;place-items:center;font-size:34px;backdrop-filter:blur(10px);opacity:.85}
+    .nav-btn:hover{opacity:1}
+    .nav-btn[disabled]{opacity:.35;cursor:not-allowed}
+    .nav-prev{left:-10px}.nav-next{right:-10px}
+    .page-indicator{position:absolute;bottom:12px;left:50%;translate:-50% 0;background:rgba(255,255,255,.12);
+      color:#fff;padding:8px 12px;border-radius:999px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none}
+
+    /* Animazioni */
+    .slide-left canvas, .slide-right canvas{transition:transform var(--anim) ease, opacity var(--anim) ease}
+    .slide-left.enter canvas{transform:translateX(16px); opacity:0}
+    .slide-left.enter.done canvas{transform:translateX(0); opacity:1}
+    .slide-right.enter canvas{transform:translateX(-16px); opacity:0}
+    .slide-right.enter.done canvas{transform:translateX(0); opacity:1}
+    .flip-left, .flip-right{position:relative}
+    .flip-left::after, .flip-right::after{
+      content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none;
+      background: radial-gradient(120% 100% at 0% 50%, rgba(0,0,0,.35), transparent 60%);
+      opacity:0; transition:opacity var(--anim) ease;
+    }
+    .flip-right::after{background: radial-gradient(120% 100% at 100% 50%, rgba(0,0,0,.35), transparent 60%)}
+    .flip-left.anim canvas, .flip-right.anim canvas{transform-origin:50% 50%; backface-visibility:hidden; transition:transform var(--anim) ease}
+    .flip-left.anim canvas{transform:rotateY(-7deg)}
+    .flip-right.anim canvas{transform:rotateY(7deg)}
+    .flip-left.anim::after, .flip-right.anim::after{opacity:1}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong id="headerTitle">Volantino/Brochure • Visualizzatore PDF</strong></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button id="toggleMode" class="btn" type="button" aria-pressed="false" title="Vista singola/doppia pagina">Vista: singola</button>
+      <button id="fitWidth" class="btn" type="button" aria-pressed="true" title="Adatta in larghezza / in altezza">Adatta: larghezza</button>
+      <button id="animMode" class="btn" type="button" aria-pressed="true" title="Cambia animazione di sfoglio">Animazione: flip</button>
+      <button id="switchToPartiture" class="btn" type="button" title="Visualizza il PDF delle partiture">Visualizza partiture</button>
+      <button id="switchToVolantino" class="btn" type="button" title="Torna al volantino" style="display:none;">Torna al volantino</button>
+      <a id="openPdf" class="btn" href="Volantino.pdf" target="_blank" rel="noopener">Apri PDF</a>
+    </div>
+  </header>
+
+  <main class="stage" id="stage" aria-live="polite">
+    <div class="page-wrap" id="pageWrap">
+      <button class="nav-btn nav-prev" id="prevBtn" aria-label="Pagina precedente">&#x276E;</button>
+      <div id="canvasContainer">
+        <canvas id="canvasA" aria-label="Pagina del volantino"></canvas>
+      </div>
+      <button class="nav-btn nav-next" id="nextBtn" aria-label="Pagina successiva">&#x276F;</button>
+      <div class="page-indicator" id="pageIndicator">Caricamento…</div>
+    </div>
+  </main>
+
+  <footer>
+    Usa ←/→ per navigare; tocca i lati su mobile. Aggiungi a URL: <code>?mode=spread</code> per vista brochure.
+  </footer>
+
+  <script>
+    // --- Caricamento robusto di pdf.js (evita "pdfjsLib is not defined") ---
+    const PDFJS_CDNS = [
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174',
+      'https://unpkg.com/pdfjs-dist@3.11.174',
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174'
+    ];
+    function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.crossOrigin='anonymous';s.referrerPolicy='no-referrer';s.onload=()=>res();s.onerror=()=>rej(new Error('load fail '+src));document.head.appendChild(s);});}
+    async function ensurePdfJs(){ if(window.pdfjsLib) return {base:null};
+      for(const base of PDFJS_CDNS){ try{ await loadScript(base+'/build/pdf.min.js'); if(window.pdfjsLib){ return {base}; } }catch{} } throw new Error('Impossibile caricare pdf.js'); }
+
+    (async function main(){
+      const DEFAULT_PDF = 'Volantino.pdf';
+      const params = new URLSearchParams(location.search);
+      let currentPdfFile = DEFAULT_PDF; // Variabile per tracciare il PDF corrente
+      const startMode = (params.get('mode')||'single').toLowerCase()==='spread'?'spread':'single';
+      const startAnim = (params.get('anim')||'flip').toLowerCase(); // flip|slide|none
+
+      const stage = document.getElementById('stage');
+      const pageWrap = document.getElementById('pageWrap');
+      const container = document.getElementById('canvasContainer');
+      const canvasA = document.getElementById('canvasA'); const ctxA = canvasA.getContext('2d');
+      let canvasB=null, ctxB=null;
+
+      const prevBtn = document.getElementById('prevBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const pageIndicator = document.getElementById('pageIndicator');
+      const toggleModeBtn = document.getElementById('toggleMode');
+      const fitWidthBtn = document.getElementById('fitWidth');
+      const animModeBtn = document.getElementById('animMode');
+      const switchToPartitureBtn = document.getElementById('switchToPartiture');
+      const switchToVolantinoBtn = document.getElementById('switchToVolantino');
+      const openPdfLink = document.getElementById('openPdf');
+      const headerTitle = document.getElementById('headerTitle');
+
+      // carica pdf.js
+      try{
+        const {base} = await ensurePdfJs();
+        const workerSrc = (base||PDFJS_CDNS[0]) + '/build/pdf.worker.min.js';
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+      }catch(e){
+        pageIndicator.textContent='Impossibile caricare la libreria PDF.';
+        return;
+      }
+
+      // stato
+      let mode = startMode;          // 'single' | 'spread'
+      let fitMode = 'width';         // 'width' | 'height'
+      let animationMode = ['flip','slide','none'].includes(startAnim)?startAnim:'flip';
+      let pdfDoc=null, pageNum=1, isRendering=false, pending=false;
+
+      // layout
+      function setContainerLayout(){
+        container.className=''; container.classList.remove('spread','slide-left','slide-right','enter','done','flip-left','flip-right','anim');
+        if(mode=
